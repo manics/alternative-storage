@@ -50,10 +50,13 @@ def randomDeleteField(d, p):
     for k in d.keys():
         if random() < p:
             del d[k]
+    return d
 
 def mergeDicts(a, b):
     if a is None:
         return b
+    if b is None:
+        return a
     for k in b.keys():
         if k in a:
             mergeDicts(a[k], b[k])
