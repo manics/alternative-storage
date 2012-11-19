@@ -23,14 +23,18 @@ public:
     typedef std::vector<Type> Vector;
     static const int RANK = 2;
 
-    HDF5(std::string filename):
-	_file(filename.c_str(), H5F_ACC_TRUNC),
+    HDF5(std::string filename, unsigned int flags = H5F_ACC_TRUNC):
+	_file(filename.c_str(), flags),
 	_storedType(PredType::NATIVE_DOUBLE) {
     }
 
     Group createGroup(std::string name) {
 	Group g = _file.createGroup(name.c_str());
 	return g;
+    }
+
+    bool groupExists(std::string name) {
+	return false;
     }
 
     DataSet createDataSet(std::string group, std::string name, int ncols) {
@@ -101,8 +105,39 @@ public:
 	return dims[1];
     }
 
+    void createGroupIfNotExist(std::string name) {
+	using std::string;
+
+	size_t p = 0;
+	while (p != string::npos) {
+	    p = name.find_first_of('/', p + 1);
+
+	    string g = name.substr(0, p);
+
+	    // This should throw a GroupIException exception if the group
+	    // doesn't exist, but it seems to throw a FileIException instead
+	    try {
+		Exception::dontPrint();
+		//std::cout << "Looking for group " << g << std::endl;
+		//H5G_stat_t stat;
+		//_file.getObjinfo(g.c_str(), true, stat);
+		Group group = _file.openGroup(g.c_str());
+	    }
+	    catch (GroupIException notFoundError) {
+		std::cout << "Caught GroupIException, Creating group \""
+			  << g << "\"" << std::endl;
+		createGroup(g);
+	    }
+	    catch (FileIException notFoundError) {
+		std::cout << "Caught FileIException, Creating group \""
+			  << g << "\"" << std::endl;
+		createGroup(g);
+	    }
+	}
+    }
+
 private:
-    void printDataSetSize(const DataSet& ds) {
+    void printDataSetSize(const DataSet& ds) const {
 	DataSpace space = ds.getSpace();
 	int rank = space.getSimpleExtentNdims();
 	assert(rank == RANK);
@@ -112,7 +147,7 @@ private:
 	std::cout << "Dimensions: " << dims[0] << "x" << dims[1] << std::endl;
     }
 
-    void setRowHyperslab(DataSpace& space, int row, int ncols) {
+    void setRowHyperslab(DataSpace& space, int row, int ncols) const {
 	hsize_t offset[2] = { row, 0 };
 	hsize_t dims[2] = { 1, ncols };
 	space.selectHyperslab(H5S_SELECT_SET, dims, offset);
@@ -123,6 +158,116 @@ private:
     const PredType _storedType;
 };
 
+
+class SimulatedData
+{
+public:
+    typedef std::map<std::string, HDF5::Vector*> MapType;
+
+    SimulatedData(int id, double mu, double delField = 0.0):
+	_id(id), _timestamp(0) {
+	_ns[0] = 10;
+	_ns[1] = 20;
+	_ns[2] = 30;
+	_ns[3] = 40;
+
+	// 1 set of 4 feature groups (sum(ns) features in total)
+	createF("", mu);
+	// 4 sets
+	createT1("", mu);
+	// 16 sets
+	createT2("", mu);
+	// TODO: randomDeleteField
+    }
+
+    ~SimulatedData() {
+	for (MapType::iterator it = _values.begin(); it != _values.end(); ++it)
+	{
+	    delete it->second;
+	}
+    }
+
+    const MapType& getData() const {
+	return _values;
+    }
+
+private:
+
+    // TODO: Generate Gaussian random numbers
+    void randN(HDF5::Vector& vs, double mu) {
+	for (HDF5::Vector::iterator it = vs.begin(); it != vs.end(); ++it) {
+	    *it = (static_cast<double>(std::rand()) / RAND_MAX - 0.5) * mu;
+	}
+    }
+
+    void createF(std::string group, double mu) {
+	std::string names[] = { "/f1", "/f2", "/f3", "/f4" };
+	for (int i = 0; i < 4; ++i)
+	{
+	    HDF5::Vector* vs = new HDF5::Vector(_ns[i]);
+	    randN(*vs, mu);
+	    _values[group + names[i]] = vs;
+	}
+    }
+
+    void createT1(std::string group, double mu) {
+	std::string names[] = { "/t1", "/t2", "/t3", "/t4" };
+	for (int i = 0; i < 4; ++i) {
+	    createF(group + names[i], mu);
+	}
+    }
+
+    void createT2(std::string group, double mu) {
+	std::string names[] = { "/t1", "/t2", "/t3", "/t4" };
+	for (int i = 0; i < 4; ++i) {
+	    createT1(group + names[i], mu);
+	}
+    }
+
+    std::map<std::string, HDF5::Vector*> _values;
+    int _id;
+    int _timestamp;
+    int _ns[4];
+};
+
+void generateData(HDF5& hdf, int n)
+{
+    SimulatedData sd(0, 0.0);
+    SimulatedData::MapType data = sd.getData();
+    for (SimulatedData::MapType::const_iterator it = data.begin();
+	 it != data.end(); ++it)
+    {
+	std::string g = it->first;
+	size_t p = g.find_last_of('/');
+	if (p == std::string::npos)
+	{
+	    std::cout << "Ignoring \"" << g << "\"" << std::endl;
+	    continue;
+	}
+
+	std::string group = g.substr(0, p + 1);
+	std::string table = g.substr(p + 1);
+
+	hdf.createGroupIfNotExist(group);
+	hdf.createDataSet(group, table, it->second->size());
+    }
+
+    for (int i = 0; i < n; ++i)
+    {
+	std::cout << i << " ";
+	SimulatedData sd(i, 0.0);
+	SimulatedData::MapType data = sd.getData();
+	for (SimulatedData::MapType::const_iterator it = data.begin();
+	     it != data.end(); ++it)
+	{
+	    std::string table = it->first;
+	    //std::cout << i << ": Adding table " << table << std::endl;
+	    DataSet ds = hdf.getDataSet(table);
+	    hdf.addRow(*it->second, ds);
+	}
+    }
+    std::cout << std::endl;
+}
 
 void writeHdf5(HDF5& hdf, int nrows, int ncols)
 {
@@ -180,25 +325,49 @@ int main(int c, char* argv[])
     using std::endl;
     using std::srand;
 
+    bool writeRead = false;
+
     int nrows = 20000;
     int ncols = 2000;
+    int ndata = 10000;
 
     srand(time(NULL));
 
     std::clock_t start = clock();
 
     HDF5 hdf("hdf5-cpp-test.h5");
-    writeHdf5(hdf, nrows, ncols);
-    cerr << "Writing: "
-	 << static_cast<double>(clock() - start) / CLOCKS_PER_SEC 
-	 << "s" << endl;
 
-    start = clock();
+    if (writeRead)
+    {
+	writeHdf5(hdf, nrows, ncols);
+	cerr << "Writing: "
+	     << static_cast<double>(clock() - start) / CLOCKS_PER_SEC 
+	     << "s" << endl;
 
-    readHdf5(hdf, nrows, ncols);
-    cerr << "Reading: "
-	 << static_cast<double>(clock() - start) / CLOCKS_PER_SEC
-	 << "s" << endl;
+	start = clock();
+
+	readHdf5(hdf, nrows, ncols);
+	cerr << "Reading: "
+	     << static_cast<double>(clock() - start) / CLOCKS_PER_SEC
+	     << "s" << endl;
+    }
+    else
+    {
+	generateData(hdf, ndata);
+	cerr << "Saved " << ndata << ": "
+	     << static_cast<double>(clock() - start) / CLOCKS_PER_SEC
+	     << "s" << endl;
+    }
 
     return 0;
 }
+
+
+/***************************************************************************
+ * g++ -Wall hdf5test.cpp -lhdf5_cpp -lhdf5 -O3
+ * time ./a.out 
+ * Saved 10000: 25.4671s
+ * real    0m25.574s
+ * user    0m22.271s
+ * sys     0m3.206s
+ ***************************************************************************/
