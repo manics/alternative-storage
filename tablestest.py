@@ -4,20 +4,28 @@ import mongotest as m
 import sys
 from datetime import datetime
 
-filename = "tablestest.h5"
+default_filename = "tablestest.h5"
 h = None
 
-def newDb():
+def newDb(filename = default_filename, mode = "tables"):
     h = tables.openFile(filename, "w", title="Tables Test")
     d = simulate(0, 0)
-    createSchema(h, d)
+    if mode == "tables":
+        createSchema(h, d)
+    elif mode == "earray":
+        createSchemaAsEArray(h, d)
+    else:
+        raise Exception("Invalid mode")
     return h
 
-def openDb():
+def openDb(filename = default_filename):
     h = tables.openFile(filename, "a", title="Tables Test")
     return h
 
 def createSchema(h, fulld):
+    """
+    Create tables from a flat dict in which descendants are indicated by "/"
+    """
     def createTable(name, vs):
         desc = {}
         for n in xrange(len(vs)):
@@ -31,7 +39,26 @@ def createSchema(h, fulld):
         else:
             print "Ignoring field %s value %s" % (k, str(v))
 
+def createSchemaAsEArray(h, fulld):
+    """
+    Create EArray tables from a flat dict in which descendants are indicated
+    by "/"
+    """
+    def createTable(name, vs):
+        p = name.rfind('/')
+        h.createEArray(name[:p], name[p + 1:], tables.Float32Atom(len(vs)), \
+                           (0,), createparents=True)
+
+    for k, v in fulld.iteritems():
+        if type(v) == list:
+            createTable(k, v)
+        else:
+            print "Ignoring field %s value %s" % (k, str(v))
+
 def createSchemaFromNestedDict(h, fulld):
+    """
+    Create groups and tables from a nested dict
+    """
     def createTable(group, k, vs):
         desc = {}
         for n in xrange(len(vs)):
@@ -95,7 +122,7 @@ def addRow(h, d):
             #print k
             table = h.getNode(k)
             table.append([v])
-            #table.flush()
+            table.flush()
         #else:
         #    print "Ignoring field %s value %s" % (k, str(v))
 
@@ -123,3 +150,11 @@ def addSimulated(h, ids):
 #CPU times: user 45.71 s, sys: 0.36 s, total: 46.07 s
 #Wall time: 46.09 s
 
+
+#Using EArray for storage
+#tt.h=tt.newDb(mode="earray")
+
+#Flushing after every table row
+#time tt.addSimulated(tt.h,range(10000))
+#CPU times: user 321.08 s, sys: 22.26 s, total: 343.34 s
+#Wall time: 343.68 s
