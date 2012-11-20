@@ -29,6 +29,7 @@ def openDb(filename = default_filename):
 def createSchema(h, fulld):
     """
     Create tables from a flat dict in which descendants are indicated by "/"
+    in the original single value per row/column format
     """
     def createTable(name, vs):
         desc = {}
@@ -59,6 +60,23 @@ def createSchemaAsEArray(h, fulld):
         else:
             print "Ignoring field %s value %s" % (k, str(v))
 
+def createSchemaWithArrays(h, fulld):
+    """
+    Create a single table from a flat dict in which descendants are indicated
+    by "/", with each column holding an array of values
+
+    Incomplete, addRow() won't work at the moment
+    """
+    desc = {}
+    for k, v in fulld.iteritems():
+        if type(v) == list:
+            k = k.strip("/").replace("/", "_")
+            desc[k] = tables.Float32Col(shape=(len(v),))
+        else:
+            print "Ignoring field %s value %s" % (k, str(v))
+
+    h.createTable("/", "all", desc)
+
 def createSchemaFromNestedDict(h, fulld):
     """
     Create groups and tables from a nested dict
@@ -85,6 +103,10 @@ def createSchemaFromNestedDict(h, fulld):
                 print "Ignoring field %s value %s" % (k, str(v))
 
     createGroup(None, None, fulld)
+
+def removeAll(h):
+    for x in h.iterNodes('/'):
+        h.removeNode('/', x._v_name, recursive=True)
 
 def randN(mu, n):
     return [normalvariate(mu, sigma) for i in xrange(n)]
