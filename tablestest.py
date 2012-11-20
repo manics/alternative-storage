@@ -1,11 +1,15 @@
 #PyTables instead of MongoDB
 import tables
-import mongotest as m
+from random import normalvariate, random
 import sys
 from datetime import datetime
 
 default_filename = "tablestest.h5"
-h = None
+
+sigma = 4
+mus = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+ns = [10, 20, 30, 40]
+#ns = [2, 2, 2, 2]
 
 def newDb(filename = default_filename, mode = "tables"):
     h = tables.openFile(filename, "w", title="Tables Test")
@@ -82,11 +86,14 @@ def createSchemaFromNestedDict(h, fulld):
 
     createGroup(None, None, fulld)
 
+def randN(mu, n):
+    return [normalvariate(mu, sigma) for i in xrange(n)]
+
 def createF(d, pre, mu):
-    d[pre + "/f1"] = m.randN(mu, m.ns[0])
-    d[pre + "/f2"] = m.randN(mu, m.ns[1])
-    d[pre + "/f3"] = m.randN(mu, m.ns[2])
-    d[pre + "/f4"] = m.randN(mu, m.ns[3])
+    d[pre + "/f1"] = randN(mu, ns[0])
+    d[pre + "/f2"] = randN(mu, ns[1])
+    d[pre + "/f3"] = randN(mu, ns[2])
+    d[pre + "/f4"] = randN(mu, ns[3])
 
 def createT1(d, prefix, mu): 
     for g in ["t1", "t2", "t3", "t4"]:
@@ -132,29 +139,38 @@ def addSimulated(h, ids):
     for id in ids:
         sys.stdout.write('%d ' % id)
         sys.stdout.flush()
-        d = simulate(id + 1, m.mus[id % len(m.mus)])
+        d = simulate(id + 1, mus[id % len(mus)])
         addRow(h, d)
     sys.stdout.write('\n')
 
 
 #import tablestest as tt
-#tt.h.close(); reload(tt); tt.h=tt.newDb()
+#h.close(); reload(tt); h=tt.newDb()
 
 #Flushing after every table row
-#time tt.addSimulated(tt.h,range(100))
+#time tt.addSimulated(h,range(100))
 #CPU times: user 45.89 s, sys: 0.34 s, total: 46.23 s
 #Wall time: 46.24 s
+#
+#time tt.addSimulated(h,range(10000))
+#CPU times: user 4483.58 s, sys: 34.85 s, total: 4518.43 s
+#Wall time: 4519.40 s
 
 #Without flushing
-#time tt.addSimulated(tt.h,range(100))
+#time tt.addSimulated(h,range(100))
 #CPU times: user 45.71 s, sys: 0.36 s, total: 46.07 s
 #Wall time: 46.09 s
 
 
 #Using EArray for storage
-#tt.h=tt.newDb(mode="earray")
+#h.close(); h=tt.newDb(mode="earray")
 
 #Flushing after every table row
-#time tt.addSimulated(tt.h,range(10000))
+#time tt.addSimulated(h,range(10000))
 #CPU times: user 321.08 s, sys: 22.26 s, total: 343.34 s
 #Wall time: 343.68 s
+#
+#time tt.addSimulated(h,range(100000))
+#CPU times: user 3181.52 s, sys: 223.32 s, total: 3404.85 s
+#Wall time: 3408.70 s
+#File size of tablestest.h5 806M
