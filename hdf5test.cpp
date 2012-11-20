@@ -3,6 +3,7 @@
  */
 
 #include <cassert>
+#include <cmath>
 #include <cstdlib>
 #include <ctime>
 #include <map>
@@ -192,11 +193,41 @@ public:
     }
 
 private:
+    class RandomGaussian {
+    public:
+	RandomGaussian():
+	    _empty(true) {
+	}
 
-    // TODO: Generate Gaussian random numbers
+	double next() {
+	    if (!_empty) {
+		_empty = true;
+		return _y;
+	    }
+
+	    // http://en.wikipedia.org/wiki/Marsaglia_polar_method
+	    while (true) {
+		double u = static_cast<double>(std::rand()) / RAND_MAX * 2 - 1;
+		double v = static_cast<double>(std::rand()) / RAND_MAX * 2 - 1;
+		double s = u * u + v * v;
+		if (s < 1) {
+		    double m = std::sqrt(-2.0 * std::log(s) / s);
+		    double x = u * m;
+		    _y = v * m;
+		    return x;
+		}
+	    }
+	}
+
+    private:
+	bool _empty;
+	double _y;
+    };
+
     void randN(HDF5::Vector& vs, double mu) {
+	RandomGaussian r;
 	for (HDF5::Vector::iterator it = vs.begin(); it != vs.end(); ++it) {
-	    *it = (static_cast<double>(std::rand()) / RAND_MAX - 0.5) * mu;
+	    *it = r.next();
 	}
     }
 
@@ -366,8 +397,9 @@ int main(int c, char* argv[])
 /***************************************************************************
  * g++ -Wall hdf5test.cpp -lhdf5_cpp -lhdf5 -O3
  * time ./a.out 
- * Saved 10000: 25.4671s
- * real    0m25.574s
- * user    0m22.271s
- * sys     0m3.206s
+ * Saved 10000: 26.5098s
+ * 
+ * real    0m27.010s
+ * user    0m23.283s
+ * sys     0m3.251s
  ***************************************************************************/
