@@ -51,8 +51,9 @@ def createSchemaAsEArray(h, fulld):
     """
     def createTable(name, vs):
         p = name.rfind('/')
-        h.createEArray(name[:p], name[p + 1:], tables.Float32Atom(len(vs)), \
-                           (0,), createparents=True)
+        h.createEArray(name[:p], name[p + 1:], tables.Float32Atom(),
+                       (0, len(vs)), createparents=True)
+                       #chunkshape=(1, len(vs)))
 
     for k, v in fulld.iteritems():
         if type(v) == list:
@@ -177,7 +178,7 @@ def addSimulated(h, ids):
 #time tt.addSimulated(h,range(10000))
 #CPU times: user 4483.58 s, sys: 34.85 s, total: 4518.43 s
 #Wall time: 4519.40 s
-
+#
 #Without flushing
 #time tt.addSimulated(h,range(100))
 #CPU times: user 45.71 s, sys: 0.36 s, total: 46.07 s
@@ -189,10 +190,19 @@ def addSimulated(h, ids):
 
 #Flushing after every table row
 #time tt.addSimulated(h,range(10000))
-#CPU times: user 321.08 s, sys: 22.26 s, total: 343.34 s
-#Wall time: 343.68 s
+#CPU times: user 321.75 s, sys: 22.19 s, total: 343.95 s
+#Wall time: 344.30 s
 #
 #time tt.addSimulated(h,range(100000))
-#CPU times: user 3181.52 s, sys: 223.32 s, total: 3404.85 s
-#Wall time: 3408.70 s
+#CPU times: user 3054.43 s, sys: 223.49 s, total: 3277.92 s
+#Wall time: 3281.50 s
 #File size of tablestest.h5 806M
+#
+#Without flushing
+#time tt.addSimulated(h,range(10000))
+#CPU times: user 303.94 s, sys: 24.79 s, total: 328.74 s
+#Wall time: 329.05 s
+#
+#time tt.addSimulated(h,range(100000))
+#CPU times: user 3004.45 s, sys: 249.29 s, total: 3253.73 s
+#Wall time: 3257.07 s
