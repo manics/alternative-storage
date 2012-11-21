@@ -1,4 +1,4 @@
 mongo-test
 ==========
 
-Trying out MongoDB
+Trying out MongoDB, comparing with HDF5/PyTables.
