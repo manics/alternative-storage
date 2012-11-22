@@ -421,10 +421,6 @@ void readData(HDF5& hdf)
 
 void writeHdf5(HDF5& hdf, int nrows, int ncols)
 {
-    using std::rand;
-    using std::srand;
-    using std::time;
-
     hdf.createGroup("/foo");
     hdf.createGroup("/foo/bar");
     DataSet ds = hdf.createDataSet("/foo/bar", "baz", ncols);
@@ -514,8 +510,8 @@ int main(int argc, char* argv[])
     }
     cerr << "Using file \"" << fname << "\"" << endl;
 
-    std::clock_t start = clock();
-    cerr << "Timing started" << endl;
+    std::clock_t cpustart = std::clock();
+    std::time_t realstart = std::time(NULL);
 
     if (mode == 0)
     {
@@ -523,9 +519,7 @@ int main(int argc, char* argv[])
 	HDF5 hdf(fname, overwrite);
 
 	readData(hdf);
-	cerr << "Reading time: "
-	     << static_cast<double>(clock() - start) / CLOCKS_PER_SEC
-	     << "s" << endl;
+	cerr << "Reading: ";
     }
     else if (mode == 1)
     {
@@ -536,9 +530,7 @@ int main(int argc, char* argv[])
 	HDF5 hdf(fname, overwrite);
 
 	writeHdf5(hdf, nrows, ncols);
-	cerr << "Writing time: "
-	     << static_cast<double>(clock() - start) / CLOCKS_PER_SEC 
-	     << "s" << endl;
+	cerr << "Writing: ";
 
 	/*start = clock();
 
@@ -555,33 +547,59 @@ int main(int argc, char* argv[])
 	HDF5 hdf(fname, overwrite);
 
 	generateData(hdf, ndata);
-	cerr << "Writing " << ndata << " objects, time: "
-	     << static_cast<double>(clock() - start) / CLOCKS_PER_SEC
-	     << "s" << endl;
+	cerr << "Writing " << ndata << " objects: ";
     }
+
+    std::clock_t cpuend = std::clock();
+    std::time_t realend = std::time(NULL);
+
+    cerr << "CPU time: "
+	 << static_cast<double>(cpuend - cpustart) / CLOCKS_PER_SEC  << "s "
+	 << "Real time: " << realend - realstart << "s" << endl;
 
     return 0;
 }
 
 
 /***************************************************************************
- * g++ -Wall hdf5test.cpp -lhdf5_cpp -lhdf5 -O3
- * time ./a.out
- * Saved 10000: 26.5098s
- * 
- * real    0m27.010s
- * user    0m23.283s
- * sys     0m3.251s
- * hdf5-cpp-test.h5 file size 198M
- ***************************************************************************/
-
-/***************************************************************************
- * g++ -Wall hdf5test.cpp -lhdf5_cpp -lhdf5 -O3
- * time ./a.out
- * Saved 100000: 262.898s
+ * $ g++ -Wall hdf5test.cpp -lhdf5_cpp -lhdf5 -O3
  *
- * real    4m28.952s
- * user    3m50.361s
- * sys     0m32.577s
+ *
+ * $ time ./a.out 10000
+ * Writing 10000 objects: CPU time: 25.3137s Real time: 26s
+ *
+ * real    0m25.788s
+ * user    0m22.112s
+ * sys     0m3.209s
+ *
+ * hdf5-cpp-test.h5 file size 198M
+ *
+ *
+ * $ time ./a.out 0
+ * Grand total: 9.45033e+07
+ * Reading: CPU time: 5.55706s Real time: 6s
+ *
+ * real    0m5.565s
+ * user    0m4.238s
+ * sys     0m1.325s
+ *
+ *
+ * $ time ./a.out 100000
+ * Writing 100000 objects: CPU time: 250.845s Real time: 256s
+ *
+ * real    4m16.124s
+ * user    3m39.287s
+ * sys     0m31.570s
+ *
  * hdf5-cpp-test.h5 file size 1.9G
+ *
+ *
+ * $ time ./a.out 0
+ * Grand total: 9.44963e+08
+ * Reading: CPU time: 96.7685s Real time: 278s
+ *
+ * real    4m37.659s
+ * user    1m5.194s
+ * sys     0m31.580s
+ *
  ***************************************************************************/
