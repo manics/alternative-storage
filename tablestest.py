@@ -52,7 +52,7 @@ def createSchemaAsEArray(h, fulld):
     def createTable(name, vs):
         p = name.rfind('/')
         h.createEArray(name[:p], name[p + 1:], tables.Float32Atom(),
-                       (0, len(vs)), createparents=True)
+                       (0, len(vs)), createparents=True)#,
                        #chunkshape=(1, len(vs)))
 
     for k, v in fulld.iteritems():
@@ -167,6 +167,35 @@ def addSimulated(h, ids):
     sys.stdout.write('\n')
 
 
+def readAndSum(h):
+    def sumTable(tab):
+        total = 0.0
+        for r in tab.iterrows():
+            total = total + sum(r)
+        return total
+
+    def sumChild(c):
+        total = 0.0
+        if isinstance(c, tables.Array):
+            print "Array:", c.name
+            total = sumTable(c)
+            print "\tRows: %d Cols:%d Table total:%e" % \
+                (c.shape[0], c.shape[1], total)
+        elif isinstance(c, tables.group.Group):
+            print "Group:", c._v_name
+            for k, v in c._v_children.iteritems():
+                total = total + sumChild(v)
+        else:
+            raise Exception("Unexpected HDF5 object: " + str(c))
+        return total
+
+    grandTotal = 0.0;
+    for child in h.listNodes("/"):
+        grandTotal = grandTotal + sumChild(child)
+
+    print "Grand total: %e" % grandTotal
+
+
 #import tablestest as tt
 #h.close(); reload(tt); h=tt.newDb()
 
@@ -193,11 +222,23 @@ def addSimulated(h, ids):
 #CPU times: user 321.75 s, sys: 22.19 s, total: 343.95 s
 #Wall time: 344.30 s
 #
+#Reading back
+#time tt.readAndSum(h)
+#Grand total: 9.448957e+07
+#CPU times: user 21.69 s, sys: 0.06 s, total: 21.74 s
+#Wall time: 21.74 s
+#
 #time tt.addSimulated(h,range(100000))
 #CPU times: user 3054.43 s, sys: 223.49 s, total: 3277.92 s
 #Wall time: 3281.50 s
 #File size of tablestest.h5 806M
 #
+#Reading back
+#time tt.readAndSum(h)
+#Grand total: 9.450075e+08
+#CPU times: user 220.06 s, sys: 0.36 s, total: 220.42 s
+#Wall time: 220.77 s
+
 #Without flushing
 #time tt.addSimulated(h,range(10000))
 #CPU times: user 303.94 s, sys: 24.79 s, total: 328.74 s
@@ -206,3 +247,19 @@ def addSimulated(h, ids):
 #time tt.addSimulated(h,range(100000))
 #CPU times: user 3004.45 s, sys: 249.29 s, total: 3253.73 s
 #Wall time: 3257.07 s
+
+
+#Using EArray with chunksize (1, N) (i.e. one row)
+#time tt.addSimulated(h,range(10000))
+#CPU times: user 410.51 s, sys: 43.38 s, total: 453.89 s
+#Wall time: 454.24 s
+#
+#Reading back
+#time tt.readAndSum(h)
+#Grand total: 9.450050e+07
+#CPU times: user 27.81 s, sys: 3.60 s, total: 31.41 s
+#Wall time: 43.58 s
+#
+
+
+
