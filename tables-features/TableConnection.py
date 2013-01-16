@@ -6,6 +6,14 @@ from copy import deepcopy
 from omero.gateway import BlitzGateway
 from omero.grid import LongColumn, DoubleArrayColumn
 
+
+class TableConnectionError(Exception):
+    """
+    Errors occuring in the TableConnection class
+    """
+    pass
+
+
 class TableConnection(object):
 
     def __init__(self, tableName, user = None, passwd = None,
@@ -20,7 +28,6 @@ class TableConnection(object):
         @param client Client object
         """
         if client is None:
-            host = 'localhost'
             client = omero.client(host)
             sess = client.createSession(user, passwd)
             client.enableKeepAlive(60)
@@ -31,12 +38,13 @@ class TableConnection(object):
 
         self.res = sess.sharedResources()
         if (not self.res.areTablesEnabled()):
-            raise Exception('OMERO.Tables not enabled')
+            raise TableConnectionError('OMERO.Tables not enabled')
 
         repos = self.res.repositories()
         self.rid = repos.descriptions[0].id.val
 
         self.tableName = tableName
+        self.table = None
 
     def __enter__(self):
         print 'Entering Connection'
@@ -60,8 +68,7 @@ class TableConnection(object):
 
         self.table = self.openTable(tableName = self.tableName)
         if not self.table:
-            print "No table with name '%s'" % self.tableName
-            return None
+            raise TableConnectionError('No table with name:%s' % self.tableName)
 
         print "Opened table with %d rows %d columns" % \
             (self.table.getNumberOfRows(), len(self.table.getHeaders()))
@@ -92,8 +99,8 @@ class TableConnection(object):
             ofile = self.conn.getObject("OriginalFile", attributes = attrs)
 
         if ofile is None:
-            print 'No table found with name:%s id:%s' % (tableName, tableId)
-            return None
+            raise TableConnectionError('No table found with name:%s id:%s' %
+                                       (tableName, tableId))
 
         table = self.res.openTable(ofile._obj)
         print 'Opened table name:%s id:%s' % (tableName, tableId)
@@ -164,9 +171,9 @@ class TableConnection(object):
         @return A handle to the table
         """
         self.table = self.res.newTable(self.rid, self.tableName)
-        ofile = table.getOriginalFile()
+        ofile = self.table.getOriginalFile()
         id = ofile.getId().getValue()
-        return table
+        return self.table
 
 
 class FeatureTableConnection(TableConnection):
@@ -270,16 +277,18 @@ class FeatureTableConnection(TableConnection):
 
     def addData(cols, copy=True):
         """
+        Add a new row of data where DoubleArrays may be null
         """
         columns = self.table.getHeaders()
         nCols = len(columns) / 2
         if len(cols) != nCols:
-            raise Exception("Expected %d columns, got %d" % (nCols, len(cols)))
+            raise TableConnectionError(
+                "Expected %d columns, got %d" % (nCols, len(cols)))
 
         if not isinstance(cols[0], LongColumn) or not \
                 all(map(lambda x: isinstance(x, DoubleArrayColumn), cols[1:])):
-            raise Exception("Expected 1 LongColumn and %d DoubleArrayColumn" %
-                            (nCols - 1))
+            raise TableConnectionError(
+                "Expected 1 LongColumn and %d DoubleArrayColumn" % (nCols - 1))
 
         if copy:
             columns[:nCols] = deepcopy(cols)
@@ -302,16 +311,5 @@ class FeatureTableConnection(TableConnection):
         nCols = len(self.table.getHeaders()) / 2
         invalid = filter(lambda x: x >= nCols, colNumbers)
         if len(invalid) > 0:
-            raise Exception("Invalid column index: %s" % invalid)
+            raise TableConnectionError("Invalid column index: %s" % invalid)
 
-
-
-def open():
-    user = 'test1'
-    passwd = 'test1'
-    tableName = '/test.h5'
-
-    tc = FeatureTableConnection(tableName, user, passwd)
-    import atexit
-    atexit.register(tc.close)
-    return tc
