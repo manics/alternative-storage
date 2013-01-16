@@ -275,6 +275,30 @@ class FeatureTableConnection(TableConnection):
         return columns[:nWanted]
 
 
+    def readArray(self, colNumbers, start, stop):
+        """
+        Read the requested array columns which may include null entries
+        @param colNumbers Column numbers
+        @param start The first row to be read
+        @param stop The last + 1 row to be read
+        """
+
+        self._checkColNumbers(colNumbers)
+
+        headers = self.table.getHeaders()
+        nCols = len(headers) / 2
+        nWanted = len(colNumbers)
+
+        bcolNumbers = map(lambda x: x + nCols, colNumbers)
+        data = self.table.read(colNumbers + bcolNumbers, start, stop)
+        columns = data.columns
+
+        for (c, b) in izip(columns[:nWanted], columns[nWanted:]):
+            self._nullEmptyColumns(c, b)
+
+        return columns[:nWanted]
+
+
     def addData(cols, copy=True):
         """
         Add a new row of data where DoubleArrays may be null
@@ -302,6 +326,70 @@ class FeatureTableConnection(TableConnection):
             # bool([])==false
             b.values = [bool(x) for x in c.values]
             c.values = [x if x else emptyval for x in c.values]
+
+        self.table.addData(columns)
+        return columns
+
+
+    def _zeroEmptyColumns(self, col, bcol):
+        """
+        Internal helper method, sets empty elements to zeros and the
+        corresponding boolean indicator column entry to False
+        """
+        #for (c, b) in izip(columns[1:nCols], columns[(nCols + 1):]):
+        emptyval = [0.0] * col.size
+        bcol.values = [bool(x) for x in c.values]
+        col.values = [x if x else emptyval for x in col.values]
+
+    def _nullEmptyColumns(self, col, bcol):
+        """
+        Internal helper method, sets column elements which are indicated by
+        the boolean indicator as empty to []
+        """
+        col.values = [x if y else []
+                      for (x, y) in izip(col.values, bcol.values)]
+
+
+    def addPartialData(cols, copy=True):
+        """
+        Add a new row of data where some DoubleArray columns may be omitted
+        (automatically set to null)
+        """
+        columns = self.table.getHeaders()
+        nCols = len(columns) / 2
+
+        if copy:
+            cols = deepcopy(cols)
+        columnMap = dict([(c.name, c) for c in cols])
+
+        # Check the first id column is present
+        idColName = columns[0].name
+        try:
+            columns[0] = columnMap.pop(idColName)
+        except KeyError:
+            raise TableConnectionError(
+                "First column (%s) must be provided" % idCol.name)
+
+        nRows = len(columns[0].values)
+        columns[nCols].values = [True] * nRows
+
+        for n in xrange(1, nCols):
+            try:
+                print "Searching for column %s" % columns[n].name
+                columns[n] = columnMap.pop(columns[n].name)
+                print "Found"
+                self._zeroEmptyColumns(columns[n], columns[nCols + n])
+            except KeyError:
+                columns[n].values = [[0.0] * columns[n].size] * nRows
+                columns[nCols + n].values = [False] * nRows
+
+            if not isinstance(columns[n], DoubleArrayColumn):
+                raise TableConnectionError(
+                    "Expected DoubleArrayColumn (%s)" % columns[n].name)
+
+        if columnMap.keys():
+            raise TableConnectionError(
+                "Unexpected columns: %s" % columnMap.keys())
 
         self.table.addData(columns)
         return columns
