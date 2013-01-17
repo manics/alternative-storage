@@ -16,17 +16,22 @@ class TableConnectionError(Exception):
 
 
 class TableConnection(object):
+    """
+    A basic client-side wrapper for OMERO.tables which handles opening
+    and closing tables.
+    """
 
     def __init__(self, user = None, passwd = None, host = 'localhost',
                  client = None, tableName = None, tableId = None):
         """
         Create a new table handler, either by specifying user and passwd or by
         providing a client object (for scripts)
-        @param tableName The name of the table file top be used
         @param user Username
         @param passwd Password
         @param host The server hostname
-        @param client Client object
+        @param client Client object with an active session
+        @param tableName The name of the table file
+        @param tableId The OriginalFile ID of the table file
         """
         if not client:
             client = omero.client(host)
@@ -39,7 +44,7 @@ class TableConnection(object):
 
         self.res = sess.sharedResources()
         if (not self.res.areTablesEnabled()):
-            raise TableConnectionError('OMERO.Tables not enabled')
+            raise TableConnectionError('OMERO.tables not enabled')
 
         repos = self.res.repositories()
         self.rid = repos.descriptions[0].id.val
@@ -68,6 +73,10 @@ class TableConnection(object):
         Opens an existing table by ID or name.
         If there are multiple tables with the same name this throws an error
         (should really use an annotation to keep track of this).
+        If tableId is supplied it will be used in preference to tableName
+        @param tableName The name of the table file
+        @param tableId The OriginalFile ID of the table file
+        @return handle to the table
         """
         if not tableId and not tableName:
             tableId = self.tableId
@@ -109,7 +118,7 @@ class TableConnection(object):
 
     def deleteAllTables(self):
         """
-        Delete all tables with <tableName>
+        Delete all tables with self.tableName
         Will fail if there are any annotation links
         """
         ofiles = self.conn.getObjects("OriginalFile", \
@@ -145,19 +154,29 @@ class TableConnection(object):
 
 
 class FeatureTableConnection(TableConnection):
+    """
+    A client side wrapper for OMERO.tables which simulates the effect of
+    optional array-columns.
+    Also allow within-array selections.
+
+    Internally this uses an addition set of BoolColumns to indicate whether
+    a column contains valid data (True) or is null (False)
+    """
 
     def __init__(self, user, passwd, host = 'localhost', tableName = None):
+        """
+        Just calls the base-class constructor
+        """
         super(FeatureTableConnection, self).__init__(
             user, passwd, host, tableName = tableName)
-        self.table = None
-        self.tableid = None
 
     def createNewTable(self, idcolName, colDescriptions):
         """
-        Create a new table with an id column followed by DoubleArrayColumns
-        which can be set to empty
-        @param colDescriptions A list of 2-tuples describing each column as
-        (name, size)
+        Create a new table with an id LongColumn followed by
+        a set of nullable DoubleArrayColumns
+        @param idcolName The name of the id LongColumn
+        @param colDescriptions A list of 2-tuples describing each column in
+        the form [(name, size), ...]
         """
 
         # Create an identical number of bool columns indicating whether
@@ -196,9 +215,8 @@ class FeatureTableConnection(TableConnection):
         @param colNumbers Column numbers
         @param start The first row to be read
         @param stop The last + 1 row to be read
-        @return A Data object containing a list of BoolColumn indicating
-        whether the corresponding row-column element is valid (true) or null
-        (false).
+        @return A list of BoolColumns indicating whether the corresponding
+        row-column element is valid (True) or null (False).
         """
         nCols = self._checkColNumbers(colNumbers)
         bcolNumbers = map(lambda x: x + nCols, colNumbers)
@@ -210,16 +228,12 @@ class FeatureTableConnection(TableConnection):
         """
         Read the requested array columns and indices from the table
         @param colArrayNumbers A dictionary mapping column numbers to
-        an array of subindices
+        an array of subindices e.g. {1:[1,3], 3:[0]}
         @param start The first row to be read
         @param stop The last + 1 row to be read
-        @return A dictionary mapping column numbers to the requested
-        array elements. Empty array columns will result in an empty array.
-        If the id columns is requested this will not be an array.
-
-        # @param colNumbers A list of column indices to be read
-        # @param arrayIndices A list of lists, corresponding to the subarray
-        # indices of each of the columns listed in colNumbers
+        @return A list of columns with the requested array elements, which
+        may be empty (null). If the id column is requested this will not be
+        an array.
         """
 
         colNumbers = colArrayNumbers.keys()
@@ -234,7 +248,6 @@ class FeatureTableConnection(TableConnection):
         for (c, b, s) in izip(columns[:nWanted], columns[nWanted:], subIndices):
             #indexer = opertor.itemgetter(*s)
             if isinstance(c, (LongArrayColumn, DoubleArrayColumn)):
-                #hasattr(c, '__getitem__'):
                 c.values = [[x[i] for i in s] if y else []
                             for (x, y) in izip(c.values, b.values)]
             else:
@@ -249,6 +262,7 @@ class FeatureTableConnection(TableConnection):
         @param colNumbers Column numbers
         @param start The first row to be read
         @param stop The last + 1 row to be read
+        @return a list of columns
         """
 
         nCols = self._checkColNumbers(colNumbers)
@@ -267,6 +281,7 @@ class FeatureTableConnection(TableConnection):
     def getHeaders(self):
         """
         Get a set of columns to be used for populating the table with data
+        @return a list of empty columns
         """
         columns = self.table.getHeaders()
         return columns[:(len(columns) / 2)]
@@ -275,6 +290,7 @@ class FeatureTableConnection(TableConnection):
     def getNumberOfRows(self):
         """
         Get the number of rows
+        @return the number of rows in the table
         """
         return self.table.getNumberOfRows()
 
@@ -282,6 +298,8 @@ class FeatureTableConnection(TableConnection):
     def addData(self, cols, copy=True):
         """
         Add a new row of data where DoubleArrays may be null
+        @param cols A list of columns obtained from getHeaders() whose values
+        have been filled with the data to be added.
         """
         columns = self.table.getHeaders()
         nCols = len(columns) / 2
@@ -308,13 +326,14 @@ class FeatureTableConnection(TableConnection):
             c.values = [x if x else emptyval for x in c.values]
 
         self.table.addData(columns)
-        return columns
 
 
     def addPartialData(self, cols, copy=True):
         """
         Add a new row of data where some DoubleArray columns may be omitted
-        (automatically set to null)
+        @param cols A subset of the columns obtained from getHeaders() whose
+        values have been filled with the data to be added. Missing columns
+        are automatically treated as nulls.
         """
         columns = self.table.getHeaders()
         nCols = len(columns) / 2
@@ -351,24 +370,28 @@ class FeatureTableConnection(TableConnection):
                 "Unexpected columns: %s" % columnMap.keys())
 
         self.table.addData(columns)
-        return columns
 
 
     def _zeroEmptyColumns(self, col, bcol):
         """
         Internal helper method, sets empty elements to zeros and the
         corresponding boolean indicator column entry to False
+        @param col The data column
+        @param bcol The indicator column
         """
         #for (c, b) in izip(columns[1:nCols], columns[(nCols + 1):]):
         emptyval = [0.0] * col.size
         bcol.values = [bool(x) for x in col.values]
         col.values = [x if x else emptyval for x in col.values]
 
+
     def _nullEmptyColumns(self, col, bcol):
         """
         Internal helper method, sets column elements which are indicated by
         the boolean indicator as empty to [] if they are array-columns, or
         None for scalar column types
+        @param col The data column
+        @param bcol The indicator column
         """
         if isinstance(col, (LongArrayColumn, DoubleArrayColumn)):
             col.values = [x if y else []
@@ -382,7 +405,9 @@ class FeatureTableConnection(TableConnection):
         """
         Checks the requested column numbers refer to the id or
         double-array-columns, and not the boolean indicator columns
-        @return The number of id/data columns excluding the boolean indicators
+        @param colNumbers A list of data column numbers
+        @return The number of data columns (including the ID column if
+        requested) but excluding the boolean indicator columns
         """
         nCols = len(self.table.getHeaders()) / 2
         invalid = filter(lambda x: x >= nCols, colNumbers)
