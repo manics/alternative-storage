@@ -7,7 +7,7 @@ class TestFeatureTableConnection(unittest.TestCase):
         user = 'test1'
         passwd = 'test1'
         tableName = '/test.h5'
-        self.tc = FeatureTableConnection(tableName, user, passwd)
+        self.tc = FeatureTableConnection(user, passwd, tableName = tableName)
 
     def tearDown(self):
         try:
@@ -97,7 +97,7 @@ def open():
     passwd = 'test1'
     tableName = '/test.h5'
 
-    tc = FeatureTableConnection(tableName, user, passwd)
+    tc = FeatureTableConnection(user, passwd, tableName = tableName)
     import atexit
     atexit.register(tc.close)
     return tc

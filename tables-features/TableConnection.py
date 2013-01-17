@@ -17,8 +17,8 @@ class TableConnectionError(Exception):
 
 class TableConnection(object):
 
-    def __init__(self, tableName, user = None, passwd = None,
-                 host = 'localhost', client = None):
+    def __init__(self, user = None, passwd = None, host = 'localhost',
+                 client = None, tableName = None, tableId = None):
         """
         Create a new table handler, either by specifying user and passwd or by
         providing a client object (for scripts)
@@ -28,7 +28,7 @@ class TableConnection(object):
         @param host The server hostname
         @param client Client object
         """
-        if client is None:
+        if not client:
             client = omero.client(host)
             sess = client.createSession(user, passwd)
             client.enableKeepAlive(60)
@@ -45,6 +45,7 @@ class TableConnection(object):
         self.rid = repos.descriptions[0].id.val
 
         self.tableName = tableName
+        self.tableId = tableId
         self.table = None
 
     def __enter__(self):
@@ -62,34 +63,23 @@ class TableConnection(object):
         self.conn._closeSession()
 
 
-    def getTable(self):
-        """
-        Retrieve a handle to an existing table with a given name
-        """
-        if self.table:
-            self.table.close()
-
-        self.table = self.openTable(tableName = self.tableName)
-        if not self.table:
-            raise TableConnectionError('No table with name:%s' % self.tableName)
-
-        print "Opened table with %d rows %d columns" % \
-            (self.table.getNumberOfRows(), len(self.table.getHeaders()))
-        return self.table
-
-
     def openTable(self, tableId = None, tableName = None):
         """
         Opens an existing table by ID or name.
         If there are multiple tables with the same name this just takes the
         first one (should really use an annotation to keep track of this).
         """
-        if tableId is None:
+        if not tableId:
+            tableId = self.tableId
+
+        if not tableId:
+            if not tableName:
+                tableName = self.tableName
             attrs = {'name': tableName}
             ofiles = self.conn.getObjects("OriginalFile", attributes = attrs)
             ofile = None
             for f in ofiles:
-                if ofile is None:
+                if not ofile:
                     ofile = f
                 else:
                     print 'Multiple tables with name:%s found, using id:%d' % \
@@ -97,34 +87,22 @@ class TableConnection(object):
                     break
         else:
             attrs = {'id': long(tableId)}
-            if tableName is not None:
+            if tableName:
                 attrs['name'] = tableName
             ofile = self.conn.getObject("OriginalFile", attributes = attrs)
 
-        if ofile is None:
+        if not ofile:
             raise TableConnectionError('No table found with name:%s id:%s' %
                                        (tableName, tableId))
 
-        table = self.res.openTable(ofile._obj)
-        print 'Opened table name:%s id:%s' % (tableName, tableId)
-        return table
-
-
-    def randomData(self, table, nrows):
-        """
-        Add some randomly generated data to a table
-        @param table table handle
-        @param nrows Number of random rows to add
-        """
-        from random import random
-        cols = table.getHeaders()
-        n = table.getNumberOfRows()
-
-        for row in xrange(nrows):
-            cols[0].values = [n + row]
-            for col in cols[1:]:
-                col.values = [random()]
-            table.addData(cols)
+        self.table = self.res.openTable(ofile._obj)
+        try:
+            print 'Opened table name:%s id:%s with %d rows %d columns' % \
+                (tableName, tableId,
+                 self.table.getNumberOfRows(), len(self.table.getHeaders()))
+        except omero.ApiUsageException:
+            print 'Opened table name:%s id:%s' % (tableName, tableId)
+        return self.table
 
 
     def addRow(self, table, id, data):
@@ -305,6 +283,13 @@ class FeatureTableConnection(TableConnection):
         """
         columns = self.table.getHeaders()
         return columns[:(len(columns) / 2)]
+
+
+    def getNumberOfRows(self):
+        """
+        Get the number of rows
+        """
+        return self.table.getNumberOfRows()
 
 
     def addData(self, cols, copy=True):
