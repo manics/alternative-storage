@@ -86,7 +86,8 @@ class TableConnection(object):
             if not tableName:
                 tableName = self.tableName
             attrs = {'name': tableName}
-            ofiles = self.conn.getObjects("OriginalFile", attributes = attrs)
+            ofiles = list(
+                self.conn.getObjects("OriginalFile", attributes = attrs))
             if len(ofiles) > 1:
                 raise TableConnectionError(
                     'Multiple tables with name:%s found' % tableName)
