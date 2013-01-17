@@ -4,7 +4,8 @@ from itertools import izip
 import omero
 from copy import deepcopy
 from omero.gateway import BlitzGateway
-from omero.grid import LongColumn, DoubleArrayColumn
+from omero.grid import LongColumn, BoolColumn, \
+    LongArrayColumn, DoubleArrayColumn
 
 
 class TableConnectionError(Exception):
@@ -56,6 +57,8 @@ class TableConnection(object):
 
     def close(self):
         print 'Closing Connection'
+        if self.table:
+            self.table.close()
         self.conn._closeSession()
 
 
@@ -201,8 +204,8 @@ class FeatureTableConnection(TableConnection):
             self.table.close()
 
         self.table = self.res.newTable(self.rid, self.tableName)
-        ofile = table.getOriginalFile()
-        self.id = ofile.getId().getValue()
+        ofile = self.table.getOriginalFile()
+        oid = ofile.getId().getValue()
 
         try:
             cols = [LongColumn(idcolName)] + \
@@ -212,7 +215,7 @@ class FeatureTableConnection(TableConnection):
                 [BoolColumn('_b_' + name) \
                      for (name, size) in colDescriptions]
             self.table.initialize(cols)
-            print "Initialised '%s' (%d)" % (self.tableName, id)
+            print "Initialised '%s' (%d)" % (self.tableName, oid)
         except Exception as e:
             print "Failed to create table: %s" % e
             try:
@@ -221,10 +224,8 @@ class FeatureTableConnection(TableConnection):
             except Exception as e:
                 print "Failed to delete table: %s" % e
 
-        self.table.close()
 
-
-    def isValid(colNumbers, start, stop):
+    def isValid(self, colNumbers, start, stop):
         """
         Check whether the requested arrays are valid
         @param colNumbers Column numbers
@@ -234,9 +235,10 @@ class FeatureTableConnection(TableConnection):
         whether the corresponding row-column element is valid (true) or null
         (false).
         """
-        self._checkColNumbers(colNumbers)
+        nCols = self._checkColNumbers(colNumbers)
         bcolNumbers = map(lambda x: x + nCols, colNumbers)
         data = self.table.read(bcolNumbers, start, stop)
+        return data.columns
 
 
     def readSubArray(self, colArrayNumbers, start, stop):
@@ -257,10 +259,7 @@ class FeatureTableConnection(TableConnection):
 
         colNumbers = colArrayNumbers.keys()
         subIndices = colArrayNumbers.values()
-        self._checkColNumbers(colNumbers)
-
-        headers = self.table.getHeaders()
-        nCols = len(headers) / 2
+        nCols = self._checkColNumbers(colNumbers)
         nWanted = len(colNumbers)
 
         bcolNumbers = map(lambda x: x + nCols, colNumbers)
@@ -269,8 +268,12 @@ class FeatureTableConnection(TableConnection):
 
         for (c, b, s) in izip(columns[:nWanted], columns[nWanted:], subIndices):
             #indexer = opertor.itemgetter(*s)
-            c.values = [[x[i] for i in s] if y else []
-                        for (x, y) in izip(c.values, b.values)]
+            if isinstance(c, (LongArrayColumn, DoubleArrayColumn)):
+                #hasattr(c, '__getitem__'):
+                c.values = [[x[i] for i in s] if y else []
+                            for (x, y) in izip(c.values, b.values)]
+            else:
+                self._nullEmptyColumns(c, b)
 
         return columns[:nWanted]
 
@@ -283,10 +286,7 @@ class FeatureTableConnection(TableConnection):
         @param stop The last + 1 row to be read
         """
 
-        self._checkColNumbers(colNumbers)
-
-        headers = self.table.getHeaders()
-        nCols = len(headers) / 2
+        nCols = self._checkColNumbers(colNumbers)
         nWanted = len(colNumbers)
 
         bcolNumbers = map(lambda x: x + nCols, colNumbers)
@@ -299,7 +299,15 @@ class FeatureTableConnection(TableConnection):
         return columns[:nWanted]
 
 
-    def addData(cols, copy=True):
+    def getHeaders(self):
+        """
+        Get a set of columns to be used for populating the table with data
+        """
+        columns = self.table.getHeaders()
+        return columns[:(len(columns) / 2)]
+
+
+    def addData(self, cols, copy=True):
         """
         Add a new row of data where DoubleArrays may be null
         """
@@ -331,26 +339,7 @@ class FeatureTableConnection(TableConnection):
         return columns
 
 
-    def _zeroEmptyColumns(self, col, bcol):
-        """
-        Internal helper method, sets empty elements to zeros and the
-        corresponding boolean indicator column entry to False
-        """
-        #for (c, b) in izip(columns[1:nCols], columns[(nCols + 1):]):
-        emptyval = [0.0] * col.size
-        bcol.values = [bool(x) for x in c.values]
-        col.values = [x if x else emptyval for x in col.values]
-
-    def _nullEmptyColumns(self, col, bcol):
-        """
-        Internal helper method, sets column elements which are indicated by
-        the boolean indicator as empty to []
-        """
-        col.values = [x if y else []
-                      for (x, y) in izip(col.values, bcol.values)]
-
-
-    def addPartialData(cols, copy=True):
+    def addPartialData(self, cols, copy=True):
         """
         Add a new row of data where some DoubleArray columns may be omitted
         (automatically set to null)
@@ -375,9 +364,7 @@ class FeatureTableConnection(TableConnection):
 
         for n in xrange(1, nCols):
             try:
-                print "Searching for column %s" % columns[n].name
                 columns[n] = columnMap.pop(columns[n].name)
-                print "Found"
                 self._zeroEmptyColumns(columns[n], columns[nCols + n])
             except KeyError:
                 columns[n].values = [[0.0] * columns[n].size] * nRows
@@ -395,9 +382,39 @@ class FeatureTableConnection(TableConnection):
         return columns
 
 
+    def _zeroEmptyColumns(self, col, bcol):
+        """
+        Internal helper method, sets empty elements to zeros and the
+        corresponding boolean indicator column entry to False
+        """
+        #for (c, b) in izip(columns[1:nCols], columns[(nCols + 1):]):
+        emptyval = [0.0] * col.size
+        bcol.values = [bool(x) for x in col.values]
+        col.values = [x if x else emptyval for x in col.values]
+
+    def _nullEmptyColumns(self, col, bcol):
+        """
+        Internal helper method, sets column elements which are indicated by
+        the boolean indicator as empty to [] if they are array-columns, or
+        None for scalar column types
+        """
+        if isinstance(col, (LongArrayColumn, DoubleArrayColumn)):
+            col.values = [x if y else []
+                          for (x, y) in izip(col.values, bcol.values)]
+        else:
+            col.values = [x if y else None
+                          for (x, y) in izip(col.values, bcol.values)]
+
+
     def _checkColNumbers(self, colNumbers):
+        """
+        Checks the requested column numbers refer to the id or
+        double-array-columns, and not the boolean indicator columns
+        @return The number of id/data columns excluding the boolean indicators
+        """
         nCols = len(self.table.getHeaders()) / 2
         invalid = filter(lambda x: x >= nCols, colNumbers)
         if len(invalid) > 0:
             raise TableConnectionError("Invalid column index: %s" % invalid)
 
+        return nCols
