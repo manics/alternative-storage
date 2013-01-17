@@ -66,25 +66,25 @@ class TableConnection(object):
     def openTable(self, tableId = None, tableName = None):
         """
         Opens an existing table by ID or name.
-        If there are multiple tables with the same name this just takes the
-        first one (should really use an annotation to keep track of this).
+        If there are multiple tables with the same name this throws an error
+        (should really use an annotation to keep track of this).
         """
-        if not tableId:
+        if not tableId and not tableName:
             tableId = self.tableId
+            tableName = self.tableName
 
         if not tableId:
             if not tableName:
                 tableName = self.tableName
             attrs = {'name': tableName}
             ofiles = self.conn.getObjects("OriginalFile", attributes = attrs)
-            ofile = None
-            for f in ofiles:
-                if not ofile:
-                    ofile = f
-                else:
-                    print 'Multiple tables with name:%s found, using id:%d' % \
-                        (tableName, ofile.getId())
-                    break
+            if len(ofiles) > 1:
+                raise TableConnectionError(
+                    'Multiple tables with name:%s found' % tableName)
+            if not ofiles:
+                raise TableConnectionError(
+                    'No table found with name:%s' % tableName)
+            ofile = ofiles[0]
         else:
             attrs = {'id': long(tableId)}
             if tableName:
@@ -102,22 +102,9 @@ class TableConnection(object):
                  self.table.getNumberOfRows(), len(self.table.getHeaders()))
         except omero.ApiUsageException:
             print 'Opened table name:%s id:%s' % (tableName, tableId)
+
+        self.tableId = tableId
         return self.table
-
-
-    def addRow(self, table, id, data):
-        """
-        Add a row to the table
-        @param table table handle
-        @param id Object id
-        @param data the values to store in the table
-        """
-        cols = table.getHeaders()
-        assert len(data) == len(cols) - 1
-        cols[0].values = [id]
-        for c, d in map(None, cols[1:], data):
-            c.values = [float(d)]
-        table.addData(cols)
 
 
     def deleteAllTables(self):
@@ -159,9 +146,9 @@ class TableConnection(object):
 
 class FeatureTableConnection(TableConnection):
 
-    def __init__(self, tableName, user, passwd, host = 'localhost'):
+    def __init__(self, user, passwd, host = 'localhost', tableName = None):
         super(FeatureTableConnection, self).__init__(
-            tableName, user, passwd, host)
+            user, passwd, host, tableName = tableName)
         self.table = None
         self.tableid = None
 
@@ -183,7 +170,7 @@ class FeatureTableConnection(TableConnection):
 
         self.table = self.res.newTable(self.rid, self.tableName)
         ofile = self.table.getOriginalFile()
-        oid = ofile.getId().getValue()
+        self.tableId = ofile.getId().getValue()
 
         try:
             cols = [LongColumn(idcolName)] + \
@@ -193,7 +180,7 @@ class FeatureTableConnection(TableConnection):
                 [BoolColumn('_b_' + name) \
                      for (name, size) in colDescriptions]
             self.table.initialize(cols)
-            print "Initialised '%s' (%d)" % (self.tableName, oid)
+            print "Initialised '%s' (%d)" % (self.tableName, self.tableId)
         except Exception as e:
             print "Failed to create table: %s" % e
             try:
