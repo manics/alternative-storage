@@ -63,9 +63,11 @@ class TableConnection(object):
 
     def close(self):
         print 'Closing Connection'
-        if self.table:
-            self.table.close()
-        self.conn._closeSession()
+        try:
+            if self.table:
+                self.table.close()
+        finally:
+            self.conn._closeSession()
 
 
     def openTable(self, tableId = None, tableName = None):
