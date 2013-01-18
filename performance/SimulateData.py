@@ -86,6 +86,33 @@ def dict2columns(id, d):
         [DoubleArrayColumn(k, '', len(v), [v]) for (k, v) in d.iteritems()]
     return cols
 
+def multDict2columns(sims, missing = []):
+    """
+    Concatenate the values of multiple simulated data objects so that
+    dict2columns will give a single set of columns.
+    Keys which are missing from some dicts will automatically be assigned
+    the value missing.
+    """
+
+    def concatDictValues(ds, missing = []):
+        cd = {}
+        allKeys = set()
+        for d in ds:
+            allKeys.update(d.keys())
+        for k in allKeys:
+            cd[k] = [d.get(k, missing) for d in ds]
+        return cd
+
+    ids = [s['id'] for s in sims]
+    features = [s['features'] for s in sims]
+    features = concatDictValues(features, missing)
+
+    from omero.grid import LongColumn, DoubleArrayColumn
+    cols = [LongColumn('id', '', ids)] + \
+        [DoubleArrayColumn(k, '', len(v[0]), v)
+         for (k, v) in features.iteritems()]
+    return cols
+
 def columns2dict(cols, nrows = 1):
     """
     Convert a set of columns into a dictionary of features
@@ -95,17 +122,17 @@ def columns2dict(cols, nrows = 1):
     return d
 
 
-def setup():
-    user = 'test1'
-    passwd = 'test1'
-    tableName = '/test.h5'
-
+def setup(user = 'test1', passwd = 'test1', host = 'localhost',
+          tableName = '/test.h5', new = False):
     from table_features.TableConnection import FeatureTableConnection
-    tc = FeatureTableConnection(user, passwd, tableName = tableName)
+    tc = FeatureTableConnection(user, passwd, host, tableName)
 
-    dummy = simulate(0, 0)
-    desc = dict2description(dummy['features'])
-    tc.createNewTable('id', dict2description(dummy['features']))
+    if new:
+        dummy = simulate(0, 0)
+        desc = dict2description(dummy['features'])
+        tc.createNewTable('id', dict2description(dummy['features']))
+    else:
+        tc.openTable()
     return tc
 
 
@@ -137,6 +164,55 @@ def insert(tc, n, check, keep):
     if keep:
         return k
 
+
+def insertBulkRepeat(tc, nr, n, check, keep):
+    """
+    Bulk insert multiple rows
+    Repeatedly insert the same set of rows
+    """
+    a = []
+    for i in xrange(nr):
+        a.append(simulate(i, i % len(mus)))
+    acols = multDict2columns(a)
+
+    print "Created %d data points" % nr
+
+    for i in xrange(n):
+        print i,
+        tc.addPartialData(acols)
+
+        #if check or keep:
+        #    a2 = a['features']
+        #    a2['id'] = a['id']
+
+        #if keep:
+        #    k.append(a2)
+
+        #if check:
+        #    nr = tc.getNumberOfRows()
+        #    aRead = tc.readArray(range(len(a2)), nr - 1, nr);
+        #    assertColsEqualsDict(aRead, a2)
+
+    if keep:
+        return a
+
+
+def readBulk(tc, nr, skip = None):
+    """
+    Do a bulk read of the whole table, ignore data
+    """
+
+    if not skip:
+        skip = nr
+
+    start = datetime.now()
+    stopwatch = []
+    colNumbers = range(len(tc.getHeaders()))
+    for i in xrange(0, tc.getNumberOfRows(), skip):
+        tc.readArray(colNumbers, i, i + nr)
+        stopwatch.append((datetime.now() - start).total_seconds())
+        print stopwatch[-1]
+    return stopwatch
 
 #keep = performance.SimulateData.insert(tc, 100, True, True)
 def compareLastKeep(tc, keep):
