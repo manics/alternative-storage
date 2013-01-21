@@ -75,6 +75,16 @@ class TestFeatureTableConnection(unittest.TestCase):
             [[0.5, 0.25, 0.125, 0.0625], [], [], [], []])
 
 
+    def testGetRowId(self):
+        self.createNewTable()
+        self.populateTable()
+        idx = self.tc.getRowId(2)
+        #cols = self.tc.readArray(range(4), 0, 2)
+        #print cols
+
+        self.assertEquals(idx, [1])
+
+
     def testReadSubArray(self):
         self.createNewTable()
         self.populateTable()

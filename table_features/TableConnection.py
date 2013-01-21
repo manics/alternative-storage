@@ -164,6 +164,9 @@ class FeatureTableConnection(TableConnection):
 
     Internally this uses an addition set of BoolColumns to indicate whether
     a column contains valid data (True) or is null (False)
+
+    @todo Cache some of the metadata (e.g. column names) instead of
+    requesting every time
     """
 
     def __init__(self, user, passwd, host = 'localhost', tableName = None):
@@ -279,6 +282,24 @@ class FeatureTableConnection(TableConnection):
             self._nullEmptyColumns(c, b)
 
         return columns[:nWanted]
+
+
+    def getRowId(self, id):
+        """
+        Find the row index corresponding to a particular id in the first column
+        @param id the id of the object to be retrieved
+        @return the row index of the object
+        """
+        columns = self.table.getHeaders()
+        nrows = self.getNumberOfRows()
+        condition = '(%s==%d)' % (columns[0].name, id)
+        print condition
+        idx = self.table.getWhereList(condition=condition, variables={},
+                                      start=0, stop=nrows, step=0)
+        if len(idx) > 1:
+            print "Multiple rows found, returning last"
+            idx = idx[-1]
+        return idx
 
 
     def getHeaders(self):
