@@ -32,6 +32,18 @@ class TestFeatureTableConnection(unittest.TestCase):
         self.tc.addData(cols)
 
 
+    def testOpenTable(self):
+        self.createNewTable()
+        self.populateTable()
+        tableId1 = self.tc.tableId
+        self.tc.closeTable()
+        self.assertIsNone(self.tc.tableId)
+
+        self.tc.openTable(tableId=tableId1)
+        tableId2 = self.tc.tableId
+        self.assertEquals(tableId1, tableId2)
+
+
     def testIsValid(self):
         self.createNewTable()
         self.populateTable()
@@ -79,8 +91,6 @@ class TestFeatureTableConnection(unittest.TestCase):
         self.createNewTable()
         self.populateTable()
         idx = self.tc.getRowId(2)
-        #cols = self.tc.readArray(range(4), 0, 2)
-        #print cols
 
         self.assertEquals(idx, [1])
 

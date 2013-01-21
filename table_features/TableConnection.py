@@ -64,8 +64,7 @@ class TableConnection(object):
     def close(self):
         print 'Closing Connection'
         try:
-            if self.table:
-                self.table.close()
+            self.closeTable()
         finally:
             self.conn._closeSession()
 
@@ -108,6 +107,8 @@ class TableConnection(object):
                                        (tableName, tableId))
 
         self.table = self.res.openTable(ofile._obj)
+        self.tableId = ofile.getId()
+
         try:
             print 'Opened table name:%s id:%s with %d rows %d columns' % \
                 (tableName, tableId,
@@ -145,14 +146,44 @@ class TableConnection(object):
             print ', '.join(['%.2f' % c.values[0] for c in data.columns])
 
 
-    def newTable(self):
+    def closeTable(self):
+        """
+        Close the table if open, and set table and tableId to None
+        """
+        try:
+            if self.table:
+                self.table.close()
+        finally:
+            self.table = None
+            self.tableId = None
+
+
+    def newTable(self, schema):
         """
         Create a new uninitialised table
+        @param schema the table description
         @return A handle to the table
         """
+        self.closeTable()
+
         self.table = self.res.newTable(self.rid, self.tableName)
         ofile = self.table.getOriginalFile()
-        id = ofile.getId().getValue()
+        self.tableId = ofile.getId().getValue()
+
+        try:
+            self.table.initialize(schema)
+            print "Initialised '%s' (%d)" % (self.tableName, self.tableId)
+        except Exception as e:
+            print "Failed to create table: %s" % e
+            try:
+                self.table.delete
+            except Exception as ed:
+                print "Failed to delete table: %s" % ed
+
+            self.table = None
+            self.tableId = None
+            raise e
+
         return self.table
 
 
@@ -190,29 +221,14 @@ class FeatureTableConnection(TableConnection):
         # a bool column for the id column even though it should always
         # be valid.
 
-        if self.table:
-            self.table.close()
 
-        self.table = self.res.newTable(self.rid, self.tableName)
-        ofile = self.table.getOriginalFile()
-        self.tableId = ofile.getId().getValue()
-
-        try:
-            cols = [LongColumn(idcolName)] + \
-                [DoubleArrayColumn(name, '', size) \
-                     for (name, size) in colDescriptions] + \
-                [BoolColumn('_b_' + idcolName)] + \
-                [BoolColumn('_b_' + name) \
-                     for (name, size) in colDescriptions]
-            self.table.initialize(cols)
-            print "Initialised '%s' (%d)" % (self.tableName, self.tableId)
-        except Exception as e:
-            print "Failed to create table: %s" % e
-            try:
-                self.table = None
-                self.conn.deleteObjects('OriginalFile', [id])
-            except Exception as e:
-                print "Failed to delete table: %s" % e
+        cols = [LongColumn(idcolName)] + \
+            [DoubleArrayColumn(name, '', size) \
+                 for (name, size) in colDescriptions] + \
+                 [BoolColumn('_b_' + idcolName)] + \
+                 [BoolColumn('_b_' + name) \
+                      for (name, size) in colDescriptions]
+        self.newTable(cols)
 
 
     def isValid(self, colNumbers, start, stop):
@@ -293,7 +309,6 @@ class FeatureTableConnection(TableConnection):
         columns = self.table.getHeaders()
         nrows = self.getNumberOfRows()
         condition = '(%s==%d)' % (columns[0].name, id)
-        print condition
         idx = self.table.getWhereList(condition=condition, variables={},
                                       start=0, stop=nrows, step=0)
         if len(idx) > 1:
