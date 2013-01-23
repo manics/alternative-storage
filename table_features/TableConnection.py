@@ -106,6 +106,7 @@ class TableConnection(object):
             raise TableConnectionError('No table found with name:%s id:%s' %
                                        (tableName, tableId))
 
+        self.closeTable()
         self.table = self.res.openTable(ofile._obj)
         self.tableId = ofile.getId()
 
@@ -200,12 +201,13 @@ class FeatureTableConnection(TableConnection):
     requesting every time
     """
 
-    def __init__(self, user, passwd, host = 'localhost', tableName = None):
+    def __init__(self, user = None, passwd = None, host = None,
+                 client = None, tableName = None, tableId = None):
         """
         Just calls the base-class constructor
         """
         super(FeatureTableConnection, self).__init__(
-            user, passwd, host, tableName = tableName)
+            user, passwd, host, client, tableName, tableId = None)
 
     def createNewTable(self, idcolName, colDescriptions):
         """
