@@ -315,7 +315,7 @@ class FeatureTableConnection(TableConnection):
                                       start=0, stop=nrows, step=0)
         if len(idx) > 1:
             print "Multiple rows found, returning last"
-            idx = idx[-1]
+        idx = idx[-1]
         return idx
 
 
