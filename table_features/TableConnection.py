@@ -306,17 +306,21 @@ class FeatureTableConnection(TableConnection):
         """
         Find the row index corresponding to a particular id in the first column
         @param id the id of the object to be retrieved
-        @return the row index of the object
+        @return the row index of the object, if the object is present in
+        multiple rows returns the highest row index, or None if not found
         """
         columns = self.table.getHeaders()
         nrows = self.getNumberOfRows()
         condition = '(%s==%d)' % (columns[0].name, id)
         idx = self.table.getWhereList(condition=condition, variables={},
                                       start=0, stop=nrows, step=0)
+
+        if not idx:
+            return None
         if len(idx) > 1:
             print "Multiple rows found, returning last"
-        idx = idx[-1]
-        return idx
+            # Ordering of rows not guaranteed
+        return max(idx)
 
 
     def getHeaders(self):
