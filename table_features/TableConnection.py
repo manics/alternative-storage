@@ -106,16 +106,20 @@ class TableConnection(object):
             raise TableConnectionError('No table found with name:%s id:%s' %
                                        (tableName, tableId))
 
-        self.closeTable()
-        self.table = self.res.openTable(ofile._obj)
-        self.tableId = ofile.getId()
+        if self.tableId == ofile.getId():
+            print 'Using existing connection to table name:%s id:%d' % \
+                (tableName, tableId)
+        else:
+            self.closeTable()
+            self.table = self.res.openTable(ofile._obj)
+            self.tableId = ofile._obj.getId()
+            print 'Opened table name:%s id:%d' % (tableName, tableId)
 
         try:
-            print 'Opened table name:%s id:%s with %d rows %d columns' % \
-                (tableName, tableId,
-                 self.table.getNumberOfRows(), len(self.table.getHeaders()))
+            print '\t%d rows %d columns' % \
+                (self.table.getNumberOfRows(), len(self.table.getHeaders()))
         except omero.ApiUsageException:
-            print 'Opened table name:%s id:%s' % (tableName, tableId)
+            pass
 
         self.tableId = tableId
         return self.table
