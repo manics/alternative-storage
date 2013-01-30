@@ -112,8 +112,8 @@ class TableConnection(object):
         else:
             self.closeTable()
             self.table = self.res.openTable(ofile._obj)
-            self.tableId = ofile._obj.getId()
-            print 'Opened table name:%s id:%d' % (tableName, tableId)
+            self.tableId = ofile.getId()
+            print 'Opened table name:%s id:%d' % (tableName, self.tableId)
 
         try:
             print '\t%d rows %d columns' % \
@@ -190,6 +190,33 @@ class TableConnection(object):
             raise e
 
         return self.table
+
+
+    def chunkedRead(self, colNumbers, start, stop, chunk):
+        """
+        Split a call to table.read(), into multiple chunks to limit the number
+        of rows returned in one go.
+        @param colNumbers A list of columns indices to be read
+        @param start The first row to be read
+        @param stop The last + 1 row to be read
+        @param chunk The maximum number of rows to read in each call
+        @return a data object, note lastModified will be set to the timestamp
+        the first chunked call
+        """
+        p = start
+        q = min(start + chunk, stop)
+        data = self.table.read(colNumbers, p, q)
+        p, q = q, min(q + chunk, stop)
+
+        while p < stop:
+            data2 = self.table.read(colNumbers, p, q)
+            data.rowNumbers.extend(data2.rowNumbers)
+            for (c, c2) in izip(data.columns, data2.columns):
+                c.values.extend(c2.values)
+            p, q = q, min(q + chunk, stop)
+
+        return data
+
 
 
 class FeatureTableConnection(TableConnection):
